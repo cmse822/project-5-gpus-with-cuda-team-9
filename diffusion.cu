@@ -13,6 +13,8 @@ const unsigned int BLOCK_DIM_X = 256;
 
 __constant__ float c_a, c_b, c_c;
 
+// nvcc diffusion.cu -o diffusion
+
 /********************************************************************************
   Error checking function for CUDA
  *******************************************************************************/
@@ -57,6 +59,8 @@ void host_diffusion(float* u, float *u_new, const unsigned int n,
 /********************************************************************************
   Do one diffusion step, with CUDA
  *******************************************************************************/
+
+/*
 __global__ 
 void cuda_diffusion(float* u, float *u_new, const unsigned int n){
 
@@ -67,6 +71,40 @@ void cuda_diffusion(float* u, float *u_new, const unsigned int n){
   //Apply the dirichlet boundary conditions
   //HINT: Think about which threads will have the data for the boundaries
   //FIXME
+}
+*/
+
+/********************************************************************************
+  Do one diffusion step, with CUDA
+ *******************************************************************************/
+__global__ 
+void cuda_diffusion(float* u, float *u_new, const unsigned int n, const float dx, const float dt){
+
+
+  int i = blockDim.x * blockIdx.x + threadIdx.x + NG; // Adjust for ghost cells
+
+  if (i >= NG && i < n - NG) {
+    u_new[i] = u[i] + (
+                    -c_a * u[i - 2] +
+                    c_b * u[i - 1] +
+                    -c_c * u[i] +
+                    c_b * u[i + 1] +
+                    -c_a * u[i + 2]);
+  }
+
+  __syncthreads(); // Synchronize before applying boundary conditions
+
+  // Apply the Dirichlet boundary conditions only for threads that correspond to boundary cells
+  if (threadIdx.x == 0) {
+    if (blockIdx.x == 0) { // First block handles the left boundary
+      u_new[0] = -u_new[NG + 1];
+      u_new[1] = -u_new[NG];
+    }
+    if (blockIdx.x == (n / blockDim.x) - 1) { // Last block handles the right boundary
+      u_new[n - NG]   = -u_new[n - NG - 1];
+      u_new[n - NG + 1] = -u_new[n - NG - 2];
+    }
+  }
 }
 
 /********************************************************************************
@@ -113,9 +151,9 @@ void outputToFile(string filename, float* u, unsigned int n){
 int main(int argc, char** argv){
 
   //Number of steps to iterate
-  //const unsigned int n_steps = 10;
+  const unsigned int n_steps = 10;
   //const unsigned int n_steps = 100;
-  const unsigned int n_steps = 1000000;
+  // const unsigned int n_steps = 1000000;
 
   //Whether and how ow often to dump data
   const bool outputData = true;
@@ -126,8 +164,8 @@ int main(int argc, char** argv){
   //const unsigned int n = (1<<15) +2*NG;
 
   //Block and grid dimensions
-  const unsigned int blockDim = BLOCK_DIM_X;
-  const unsigned int gridDim = (n-2*NG)/blockDim;
+  const unsigned int blockDim = BLOCK_DIM_X; //how many threads to use
+  const unsigned int gridDim = (n-2*NG)/blockDim; //How many blocks i want
 
   //Physical dimensions of the domain
   const float L = 2*M_PI;
@@ -141,6 +179,9 @@ int main(int argc, char** argv){
 
   //Copy these the cuda constant memory
   //FIXME
+  cudaMemcpyToSymbol(c_a, &const_a, sizeof(float));
+  cudaMemcpyToSymbol(c_b, &const_b, sizeof(float));
+  cudaMemcpyToSymbol(c_c, &const_c, sizeof(float));
 
   //iterator, for later
   int i;
@@ -227,6 +268,26 @@ int main(int argc, char** argv){
   float* d_u, *d_u2;
   //FIXME Allocate d_u,d_u2 on the GPU, and copy cuda_u into d_u
 
+  // Use cudaMalloc to allocate memory on the device
+  cudaError_t err = cudaMalloc((void**)&d_u, n * sizeof(float));
+  if (err != cudaSuccess) {
+      // Handle the error
+      printf("CUDA error: %s\n", cudaGetErrorString(err));
+  }
+
+  err = cudaMalloc((void**)&d_u2, n * sizeof(float));
+  if (err != cudaSuccess) {
+      // Handle the error
+      printf("CUDA error: %s\n", cudaGetErrorString(err));
+  }
+
+  // Copy cuda_u into d_u
+  err = cudaMemcpy(d_u, cuda_u, n * sizeof(float), cudaMemcpyHostToDevice);
+  if (err != cudaSuccess) {
+      // Handle the error
+      printf("CUDA error: %s\n", cudaGetErrorString(err));
+  }
+
 	cudaEventRecord(start);//Start timing
   //Perform n_steps of diffusion
   for( i = 0 ; i < n_steps; i++){
@@ -235,15 +296,28 @@ int main(int argc, char** argv){
       //Copy data off the device for writing
       sprintf(filename,"data/cuda_u%08d.dat",i);
       //FIXME
+      // Copy d_u into cuda_u
+      err = cudaMemcpy(cuda_u, d_u, n * sizeof(float), cudaMemcpyDeviceToHost);
+      if (err != cudaSuccess) {
+          // Handle the error
+          printf("CUDA error: %s\n", cudaGetErrorString(err));
+      }
 			
       outputToFile(filename,cuda_u,n);
     }
 
     //Call the cuda_diffusion kernel
     //FIXME
+    cuda_diffusion<<<gridDim, blockDim>>>(d_u, d_u2, n, dx, dt);
 
     //Switch the buffer with the original u
     //FIXME
+    // Copy d_u2 into d_u
+    err = cudaMemcpy(d_u, d_u2, n * sizeof(float), cudaMemcpyDeviceToDevice);
+    if (err != cudaSuccess) {
+        // Handle the error
+        printf("CUDA error: %s\n", cudaGetErrorString(err));
+    }
 
   }
 	cudaEventRecord(stop);//End timing
@@ -252,6 +326,12 @@ int main(int argc, char** argv){
   //Copy the memory back for one last data dump
   sprintf(filename,"data/cuda_u%08d.dat",i);
   //FIXME
+  // Copy d_u into cuda_u
+  err = cudaMemcpy(cuda_u, d_u, n * sizeof(float), cudaMemcpyDeviceToHost);
+  if (err != cudaSuccess) {
+      // Handle the error
+      printf("CUDA error: %s\n", cudaGetErrorString(err));
+  }
   
   outputToFile(filename,cuda_u,n);
 
