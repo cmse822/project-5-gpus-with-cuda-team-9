@@ -56,23 +56,6 @@ void host_diffusion(float* u, float *u_new, const unsigned int n,
   u_new[n-NG]   = -u_new[n-NG-1];
   u_new[n-NG+1] = -u_new[n-NG-2];
 }
-/********************************************************************************
-  Do one diffusion step, with CUDA
- *******************************************************************************/
-
-/*
-__global__ 
-void cuda_diffusion(float* u, float *u_new, const unsigned int n){
-
-
-  //Do the diffusion
-  //FIXME
-
-  //Apply the dirichlet boundary conditions
-  //HINT: Think about which threads will have the data for the boundaries
-  //FIXME
-}
-*/
 
 /********************************************************************************
   Do one diffusion step, with CUDA
@@ -111,46 +94,59 @@ void cuda_diffusion(float* u, float *u_new, const unsigned int n, const float dx
   Do one diffusion step, with CUDA, with shared memory
  *******************************************************************************/
 __global__ 
-void shared_diffusion(float* u, float *u_new, const unsigned int n){
+void shared_diffusion(float* u, float *u_new, const unsigned int n)
+{
+    //Allocate the shared memory
+    //FIXME
 
-  //Allocate the shared memory
-  __shared__ float s_u[BLOCK_DIM_X + 4];
+    // Since we know how many elements are in each block, we can statically
+    // allocated the shared memory for this block.  The array needs its own
+    // four ghost cells that will be filled with the global elements immediate
+    // to the left and right of the blocks sections of the global array.
+    __shared__ float s_u[BLOCK_DIM_X + 4];
 
-  // Width of this block
-  int nx = blockDim.x;
+    // Width of this block
+    int nx = blockDim.x;
 
-  // Local index for shared memory
-  int si = threadIdx.x + 2;
+    // Local index for shared memory
+    int si = threadIdx.x + 2;
 
-  // Global index
-  int gi = blockIdx.x*nx + si;
+    // Global index
+    int gi = blockIdx.x*nx + si;
 
+    //Fill shared memory with the data needed from global memory
+    //HINT: 
+    //What data does each block need from global memory?
+    //When do the threads in the block need to sync?
+    // Fill each local element with its corresponding global element
+    s_u[si] = u[gi];
 
-  //Do the diffusion
-  s_u[si] = u[gi];
-  if(si < 2*NG)
-      s_u[si - NG] = u[gi - NG];
-  // Same for right two ghost cells
-  else if(si >= nx - 2*NG)
-      s_u[si + NG] = u[gi + NG]
+    if(si < 2*NG)
+        s_u[si - NG] = u[gi - NG];
+    // Same for right two ghost cells
+    else if(si >= nx - 2*NG)
+        s_u[si + NG] = u[gi + NG];
 
-  __syncthreads();
+    __syncthreads();
 
-  //Apply the dirichlet boundary conditions
-  //HINT: Think about which threads will have the data for the boundaries
-  //FIXME
-  // memory and stores in global
-  u_new[gi] = s_u[si] + ( c_a*s_u[si-2]
-                        + c_b*s_u[si-1]
-                        + c_c*s_u[si]
-                        + c_b*s_u[si+1]
-                        + c_a*s_u[si+2]);
-  
-  if(gi < 2*NG)
-    u_new[(gi + 1)%2] = -u_new[gi];
-  if(gi >= n - 2*NG)
-    u_new[2*(n - NG)-(gi + 1)] = -u_new[gi];
+    //Do the diffusion
+    // Same finite difference stencil as before, but not pulls from shared
+    // memory and stores in global
+    u_new[gi] = s_u[si] + ( c_a*s_u[si-2]
+                          + c_b*s_u[si-1]
+                          + c_c*s_u[si]
+                          + c_b*s_u[si+1]
+                          + c_a*s_u[si+2]);
 
+    //Apply the dirichlet boundary conditions
+    //HINT: Think about which threads will have the data for the boundaries
+    //FIXME
+
+    // Update the global boundary ghost cells in the output array
+    if(gi < 2*NG)
+        u_new[(gi + 1)%2] = -u_new[gi];
+    if(gi >= n - 2*NG)
+        u_new[2*(n - NG)-(gi + 1)] = -u_new[gi];
 }
 
 /********************************************************************************
@@ -176,15 +172,18 @@ int main(int argc, char** argv){
   //Number of steps to iterate
   const unsigned int n_steps = 10;
   //const unsigned int n_steps = 100;
-  const unsigned int n_steps = 1000000;
+  // const unsigned int n_steps = 1000000;
 
   //Whether and how ow often to dump data
-  const bool outputData = true;
+  //const bool outputData = true;
+  const bool outputData = false;
+
   const unsigned int outputPeriod = n_steps/10;
 
   //Size of u
   const unsigned int n = (1<<11) +2*NG;
   //const unsigned int n = (1<<15) +2*NG;
+  // const unsigned int n = (1<<20) +2*NG;
 
   //Block and grid dimensions
   const unsigned int blockDim = BLOCK_DIM_X; //how many threads to use
@@ -202,9 +201,12 @@ int main(int argc, char** argv){
 
   //Copy these the cuda constant memory
   //FIXME
-  cudaMemcpyToSymbol(c_a, &const_a, sizeof(float));
-  cudaMemcpyToSymbol(c_b, &const_b, sizeof(float));
-  cudaMemcpyToSymbol(c_c, &const_c, sizeof(float));
+  checkCuda(cudaMemcpyToSymbol(c_a, &const_a, sizeof(float),
+                                 0, cudaMemcpyHostToDevice));
+  checkCuda(cudaMemcpyToSymbol(c_b, &const_b, sizeof(float),
+                                0, cudaMemcpyHostToDevice));
+  checkCuda(cudaMemcpyToSymbol(c_c, &const_c, sizeof(float),
+                                 0, cudaMemcpyHostToDevice));
 
   //iterator, for later
   int i;
@@ -226,7 +228,8 @@ int main(int argc, char** argv){
 
   //Initialize with a periodic sin wave that starts after the left hand
   //boundaries and ends just before the right hand boundaries
-  for( i = NG; i < n-NG; i++){
+  for( i = NG; i < n-NG; i++)
+  {
     initial_u[i] = sin( 2*M_PI/L*(i-NG)*dx);
   }
   //Apply the dirichlet boundary conditions
@@ -245,18 +248,19 @@ int main(int argc, char** argv){
   float* host_u2 = new float[n];//buffer used for u_new
 
   //Initialize the host memory
-  for( i = 0; i < n; i++){
+  for( i = 0; i < n; i++)
+  {
     host_u[i] = initial_u[i];
   }
 
   outputToFile("data/host_uInit.dat",host_u,n);
-
   
   get_walltime(&startTime);
   //Perform n_steps of diffusion
   for( i = 0 ; i < n_steps; i++){
 
-    if(outputData && i%outputPeriod == 0){
+    if(outputData && i%outputPeriod == 0)
+    {
       sprintf(filename,"data/host_u%08d.dat",i);
       outputToFile(filename,host_u,n);
     }
@@ -396,7 +400,7 @@ int main(int argc, char** argv){
       //Copy data off the device for writing
       sprintf(filename,"data/shared_u%08d.dat",i);
       // Copy the current solution back to the host
-            checkCuda(cudaMemcpy(shared_u, d_u, n*sizeof(float),
+      checkCuda(cudaMemcpy(shared_u, d_u, n*sizeof(float),
                                  cudaMemcpyDeviceToHost));
 			
       outputToFile(filename,shared_u,n);
@@ -413,14 +417,12 @@ int main(int argc, char** argv){
   }
 	cudaEventRecord(stop);//End timing
 	
-
   //Copy the memory back for one last data dump
   sprintf(filename,"data/shared_u%08d.dat",i);
   // Copy final solution back to the device
   checkCuda(cudaMemcpy(shared_u, d_u, n*sizeof(float),
                       cudaMemcpyDeviceToHost));
   
-
   //Get the total time used on the GPU
 	cudaEventSynchronize(stop);
 	milliseconds = 0;
@@ -457,8 +459,6 @@ int main(int argc, char** argv){
   }
 	cudaEventRecord(stop);//End timing
 	
-
-
   //Get the total time used on the GPU
 	cudaEventSynchronize(stop);
 	milliseconds = 0;
@@ -476,4 +476,6 @@ int main(int argc, char** argv){
   delete[] shared_u;
 
   //FIXME free d_u and d_2
+  checkCuda( cudaFree(d_u) );
+  checkCuda( cudaFree(d_u2) );
 }
