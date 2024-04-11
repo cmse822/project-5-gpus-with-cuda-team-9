@@ -9,12 +9,14 @@
 using namespace std;
 
 const unsigned int NG = 2;
-const unsigned int BLOCK_DIM_X = 256;
+// const unsigned int BLOCK_DIM_X = 256;
+// const unsigned int BLOCK_DIM_X = 512;
+const unsigned int BLOCK_DIM_X = 1024;
 
 __constant__ float c_a, c_b, c_c;
 
 // module load NVHPC/21.9-GCCcore-10.3.0-CUDA-11.4
-// nvcc diffusion.cu -o diffusion
+// nvcc diffusion.cu -O3 -o diffusion
 
 /********************************************************************************
   Error checking function for CUDA
@@ -165,7 +167,7 @@ int main(int argc, char** argv){
 
   //Number of steps to iterate
   // const unsigned int n_steps = 10;
-  const unsigned int n_steps = 10000;
+  const unsigned int n_steps = 100;
   // const unsigned int n_steps = 1000000;
 
   //Whether and how ow often to dump data
@@ -174,8 +176,8 @@ int main(int argc, char** argv){
   const unsigned int outputPeriod = n_steps/10;
 
   //Size of u
-  const unsigned int n = (1<<11) +2*NG;
-  //const unsigned int n = (1<<15) +2*NG;
+  // const unsigned int n = (1<<11) +2*NG;
+  const unsigned int n = (1<<15) +2*NG;
   // const unsigned int n = (1<<20) +2*NG;
 
   //Block and grid dimensions
