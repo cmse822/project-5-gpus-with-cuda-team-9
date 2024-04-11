@@ -10,4 +10,4 @@
 #SBATCH --mem-per-gpu=3G # memory for CPUs
 
 
-./diffusion
+srun ./diffusion
