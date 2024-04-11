@@ -2,7 +2,7 @@
 # Job name:
 #SBATCH --job-name=quick_test_CUDA
 # Wall time (e.g. "minutes", "hours:minutes:seconds", "days-hours", "days-hours:minutes"):
-#SBATCH --time=00:02:00
+#SBATCH --time=04:00:00
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=1
 #SBATCH --cpus-per-task=1
