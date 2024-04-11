@@ -169,14 +169,8 @@ int main(int argc, char** argv){
   // const unsigned int n_steps = 1000000;
 
   //Whether and how ow often to dump data
-<<<<<<< HEAD
   // const bool outputData = true;
   const bool outputData = false;
-=======
-  //const bool outputData = true;
-  const bool outputData = false;
-
->>>>>>> 20f94d478def2cb6dee17031184bee539e606685
   const unsigned int outputPeriod = n_steps/10;
 
   //Size of u
