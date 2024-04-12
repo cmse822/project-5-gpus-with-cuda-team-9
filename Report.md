@@ -87,22 +87,28 @@ and the excessive memory copying case, using block dimensions of 256, 512,
 and 1024. Use a grid size of `2^15+2*NG` (or larger) and run for 100 steps (or
 shorter, if it's taking too long). Remember to use `-O3`!
 
-`Host function took: 0.05409ms per step\
-Cuda Kernel took: 0.0035072ms per step\
-Shared Memory Kernel took: 0.0029344ms per step\
-Excessive cudaMemcpy took: 0.0902954ms per step\`
+  ```
+  Host function took: 0.05409ms per step\
+  Cuda Kernel took: 0.0035072ms per step\
+  Shared Memory Kernel took: 0.0029344ms per step\
+  Excessive cudaMemcpy took: 0.0902954ms per step\
+  ```
 
 2. How do the GPU implementations compare to the single threaded host code. Is it
 faster than the theoretical performance of the host if we used all the cores on
 the CPU?
 
   Now testing with a domain size of 2^15 and the optimization (all cores) we see these timings:\
-  `Host function took: 0.05409ms per step\
+  ```
+  Host function took: 0.05409ms per step\
   Cuda Kernel took: 0.0035072ms per step\`
-  
+  ```
   And without optimizing:\
-  `Host function took: 0.241148ms per step\
-  Cuda Kernel took: 0.00358432ms per step\`
+  
+  ```
+  Host function took: 0.241148ms per step\
+  Cuda Kernel took: 0.00358432ms per step\
+  ```
 
   GPU is outpreform than the single threaded host code and is also better than the theoretical preformance of the host with all cores.
 
